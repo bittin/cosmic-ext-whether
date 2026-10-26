@@ -214,25 +214,41 @@ impl cosmic::Application for AppModel {
             None => base,
         };
 
-        let content: Element<'_, Message> = if let Some(temp) = self.current_temp_text() {
-            let temp_widget = widget::text::body(temp).width(Length::Shrink);
-            if self.core.applet.is_horizontal() {
-                cosmic::iced::widget::row![icon, temp_widget]
-                    .spacing(sp.space_xxxs)
-                    .align_y(Alignment::Center)
-                    .into()
-            } else {
-                cosmic::iced::widget::column![icon, temp_widget]
-                    .spacing(sp.space_xxxs)
-                    .align_x(Alignment::Center)
-                    .into()
-            }
+        // Text from the first frame keeps the panel from clipping the temperature when it arrives.
+        let temp = self
+            .current_temp_text()
+            .unwrap_or_else(|| "--°".to_string());
+        let temp_widget = widget::text::body(temp).width(Length::Shrink);
+        let content: Element<'_, Message> = if self.core.applet.is_horizontal() {
+            cosmic::iced::widget::row![icon, temp_widget]
+                .spacing(sp.space_xxxs)
+                .align_y(Alignment::Center)
+                .into()
         } else {
-            icon
+            cosmic::iced::widget::column![icon, temp_widget]
+                .spacing(sp.space_xxxs)
+                .align_x(Alignment::Center)
+                .into()
         };
 
         let horizontal = self.core.applet.is_horizontal();
         let pad = self.core.applet.suggested_padding(true).0;
+
+        // A zero-width spacer of slot height makes the button, and so its
+        // hover highlight, fill the panel's applet slot.
+        let (icon_w, icon_h) = suggested_size;
+        let minor = self.core.applet.suggested_padding(true).1;
+        let content: Element<'_, Message> = if horizontal {
+            let slot = f32::from(icon_h + 2 * minor);
+            cosmic::iced::widget::row![content, widget::Space::new().height(Length::Fixed(slot))]
+                .align_y(Alignment::Center)
+                .into()
+        } else {
+            let slot = f32::from(icon_w + 2 * minor);
+            cosmic::iced::widget::column![content, widget::Space::new().width(Length::Fixed(slot))]
+                .align_x(Alignment::Center)
+                .into()
+        };
 
         let button = cosmic::widget::button::custom(content)
             .padding(if horizontal { [0, pad] } else { [pad, 0] })
