@@ -12,7 +12,6 @@
     "--share=network",
     "--socket=wayland",
     "--device=dri",
-    "--talk-name=com.system76.CosmicSettingsDaemon",
     "--talk-name=org.freedesktop.portal.Desktop",
     "--talk-name=org.freedesktop.portal.Settings",
     "--filesystem=xdg-config/cosmic:rw"
