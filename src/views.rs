@@ -39,6 +39,8 @@ pub(crate) fn weather_icon_handle(name: &str) -> cosmic::widget::icon::Handle {
         "weather-storm-symbolic" => bundled!("weather-storm-symbolic"),
         "weather-fog-symbolic" => bundled!("weather-fog-symbolic"),
         "weather-severe-alert-symbolic" => bundled!("weather-severe-alert-symbolic"),
+        "badge-triangle-symbolic" => bundled!("badge-triangle-symbolic"),
+        "badge-triangle-halo-symbolic" => bundled!("badge-triangle-halo-symbolic"),
         // fallback for any unmapped name
         _ => cosmic::widget::icon::from_name(name).symbolic(true).into(),
     }
@@ -61,9 +63,6 @@ impl AppModel {
     }
 
     pub(crate) fn weather_icon_name(&self) -> &str {
-        if matches!(&self.alerts, Alerts::Local(a) if !a.is_empty()) {
-            return "weather-severe-alert-symbolic";
-        }
         // Prefer observation condition for panel icon
         if let Some(obs) = &self.observation {
             if let Some(cond) = obs.condition {
@@ -1244,6 +1243,49 @@ fn muted_color() -> Color {
     let mut c: Color = cosmic::theme::active().cosmic().background(false).on.into();
     c.a = 0.7;
     c
+}
+
+impl AppModel {
+    /// Most severe `Local` alert, which badges the panel icon. National and
+    /// unavailable alerts never badge.
+    pub(crate) fn panel_badge_severity(&self) -> Option<AlertSeverity> {
+        let Alerts::Local(a) = &self.alerts else {
+            return None;
+        };
+        a.iter()
+            .map(|x| &x.severity)
+            .min_by_key(|s| match s {
+                AlertSeverity::Extreme => 0,
+                AlertSeverity::Severe => 1,
+                AlertSeverity::Moderate => 2,
+                AlertSeverity::Minor => 3,
+                AlertSeverity::Unknown => 4,
+            })
+            .cloned()
+    }
+}
+
+/// Panel badge tint: Minor and Unknown take the accent so the badge is never untinted.
+pub(crate) fn badge_tint(severity: &AlertSeverity, theme: &cosmic::Theme) -> Color {
+    match severity {
+        AlertSeverity::Minor | AlertSeverity::Unknown => theme.cosmic().accent_color().into(),
+        s => severity_tint(s, theme),
+    }
+}
+
+pub(crate) fn tinted_icon<'a>(
+    name: &str,
+    size: u16,
+    color: impl Fn(&cosmic::Theme) -> Color + 'static,
+) -> Element<'a, Message> {
+    cosmic::widget::icon(weather_icon_handle(name))
+        .size(size)
+        .class(cosmic::theme::Svg::Custom(std::rc::Rc::new(move |theme| {
+            cosmic::iced::widget::svg::Style {
+                color: Some(color(theme)),
+            }
+        })))
+        .into()
 }
 
 /// Glyph tint by CAP severity. Minor and Unknown stay at the surface's text
