@@ -19,6 +19,10 @@ pub(crate) const FLYOUT_MAX_WIDTH: f32 = 680.0;
 pub(crate) const POPUP_MAX_HEIGHT: f32 = 1000.0;
 /// space kept clear beyond the panel slot
 const POPUP_SCREEN_MARGIN: f32 = 16.0;
+/// Fetches every instance would send at once (startup, the refresh timer,
+/// another instance's change) start after a random delay in this range, so
+/// instances on several outputs don't hit the weather APIs together.
+const BACKGROUND_FETCH_DELAY_MS: std::ops::Range<u64> = 500..3000;
 
 use crate::backend;
 use crate::config::{self, detect_military_time, WhetherConfig, APP_ID};
@@ -114,6 +118,8 @@ pub enum Message {
     Surface(cosmic::surface::Action<Message>),
     FetchWeather,
     WeatherFetched(u64, Box<Result<WeatherResult, String>>),
+    /// A background fetch whose delay has elapsed; dropped if the generation moved on.
+    DelayedFetch(u64),
     Tick(()),
     SearchInput(String),
     SearchSubmit,
@@ -176,7 +182,7 @@ impl cosmic::Application for AppModel {
         };
 
         let task = if app.config.active_location().is_some() {
-            app.start_fetch()
+            app.start_background_fetch()
         } else {
             Task::none()
         };
@@ -483,6 +489,11 @@ impl AppModel {
             Message::FetchWeather => {
                 return self.start_fetch();
             }
+            Message::DelayedFetch(generation) => {
+                if generation == self.fetch_generation {
+                    return fetch_weather_task(&self.config, generation);
+                }
+            }
             Message::WeatherFetched(generation, result) => {
                 if generation != self.fetch_generation {
                     return Task::none();
@@ -535,7 +546,7 @@ impl AppModel {
                 if self.config.active_location().is_some()
                     && !matches!(self.fetch_state, FetchState::Loading)
                 {
-                    return self.start_fetch();
+                    return self.start_background_fetch();
                 }
             }
             Message::SearchInput(input) => {
@@ -707,7 +718,7 @@ impl AppModel {
                     if location_changed {
                         self.clear_location_data();
                     }
-                    return self.start_fetch();
+                    return self.start_background_fetch();
                 }
             }
             Message::OpenAbout => {
@@ -742,6 +753,23 @@ impl AppModel {
         self.fetch_generation = self.fetch_generation.wrapping_add(1);
         self.fetch_state = FetchState::Loading;
         fetch_weather_task(&self.config, self.fetch_generation)
+    }
+
+    /// `start_fetch` for fetches every instance would otherwise send together.
+    fn start_background_fetch(&mut self) -> Task<Message> {
+        self.fetch_generation = self.fetch_generation.wrapping_add(1);
+        self.fetch_state = FetchState::Loading;
+        let generation = self.fetch_generation;
+        let span = BACKGROUND_FETCH_DELAY_MS.end - BACKGROUND_FETCH_DELAY_MS.start;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| u64::from(d.subsec_nanos()))
+            .unwrap_or_default();
+        let delay =
+            std::time::Duration::from_millis(BACKGROUND_FETCH_DELAY_MS.start + nanos % span);
+        Task::perform(tokio::time::sleep(delay), move |_| {
+            cosmic::Action::App(Message::DelayedFetch(generation))
+        })
     }
 }
 
