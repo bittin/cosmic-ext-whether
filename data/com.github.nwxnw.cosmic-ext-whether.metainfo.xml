@@ -86,6 +86,17 @@
   <!-- Release notes are English-only. Do not add xml:lang translations here;
          translate <summary>, <description>, and screenshot <caption> instead. -->
   <releases>
+    <release version="0.7.0" date="2026-10-27">
+      <description>
+        <ul>
+          <li>The panel weather icon shows a warning badge, tinted by severity, while an alert is active</li>
+          <li>Fixed the Flatpak version not following switches between light and dark themes, or location and unit changes made in Whether on another panel, dock or display</li>
+          <li>Fewer "Alerts unavailable" messages when Whether runs on several displays</li>
+          <li>The panel hover highlight now fills the applet slot like other applets</li>
+          <li>Updated Polish translation</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-01">
       <description>
         <ul>
@@ -95,7 +106,7 @@
           <li>The popup now fits and scrolls on short or scaled screens</li>
           <li>Tighter, more consistent row spacing on every COSMIC interface density</li>
         </ul>
-      </description>   
+      </description>
     </release>
     <release version="0.5.0" date="2026-09-07">
       <description>
