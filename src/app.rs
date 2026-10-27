@@ -653,7 +653,7 @@ impl AppModel {
 
                     if self.config.locations.is_empty() {
                         self.config.active_location_index = 0;
-                        self.clear_location_data();
+                        self.clear_to_no_location();
                         self.fetch_state = FetchState::Idle;
                         self.page = Page::Setup;
                     } else if idx == self.config.active_location_index {
@@ -730,7 +730,14 @@ impl AppModel {
                     active_identity(&self.config) != active_identity(&new_config);
                 let units_changed = self.config.use_fahrenheit != new_config.use_fahrenheit;
                 self.config = new_config;
-                if (location_changed || units_changed) && self.config.active_location().is_some() {
+                if self.config.active_location().is_none() {
+                    if location_changed {
+                        self.clear_to_no_location();
+                        if self.page == Page::Main {
+                            self.page = Page::Setup;
+                        }
+                    }
+                } else if location_changed || units_changed {
                     if location_changed {
                         self.clear_location_data();
                     }
@@ -761,6 +768,14 @@ impl AppModel {
         self.air_quality = None;
         self.alerts = Alerts::default();
         self.current_expanded = false;
+    }
+
+    /// No location left: drop its data and any fetch still in flight, so a late
+    /// result can't bring the removed location back.
+    fn clear_to_no_location(&mut self) {
+        self.fetch_generation = self.fetch_generation.wrapping_add(1);
+        self.clear_location_data();
+        self.fetch_state = FetchState::Idle;
     }
 
     /// Bump the fetch generation, mark loading, and dispatch a fetch for the active
@@ -871,5 +886,50 @@ mod tests {
 
         m.alerts = Alerts::National(vec![severe]);
         assert_eq!(m.panel_badge_severity(), None, "national never badges");
+    }
+
+    fn one_location() -> SavedLocation {
+        SavedLocation {
+            name: "Here".into(),
+            lat: "47.6".into(),
+            lon: "-122.3".into(),
+            cached_grid: None,
+            country_code: Some("us".into()),
+        }
+    }
+
+    #[test]
+    fn last_location_removed_elsewhere_clears_this_instance() {
+        let mut m = AppModel::default();
+        m.config.locations.push(one_location());
+        m.page = Page::Main;
+        m.alerts = Alerts::Local(vec![alert("a")]);
+        m.fetch_state = FetchState::Loading;
+        let generation = m.fetch_generation;
+
+        let mut emptied = m.config.clone();
+        emptied.locations.clear();
+        let _ = m.handle(Message::ConfigChanged(emptied));
+
+        assert_eq!(m.panel_badge_severity(), None, "badge cleared");
+        assert!(m.forecast.is_none());
+        assert!(matches!(m.fetch_state, FetchState::Idle));
+        assert_eq!(m.page, Page::Setup);
+        assert_ne!(m.fetch_generation, generation, "in-flight fetch dropped");
+    }
+
+    #[test]
+    fn removing_the_last_location_drops_a_fetch_in_flight() {
+        let mut m = AppModel::default();
+        m.config.locations.push(one_location());
+        m.page = Page::Locations;
+        m.alerts = Alerts::Local(vec![alert("a")]);
+        let generation = m.fetch_generation;
+
+        let _ = m.handle(Message::RemoveLocation(0));
+
+        assert_eq!(m.panel_badge_severity(), None);
+        assert_eq!(m.page, Page::Setup);
+        assert_ne!(m.fetch_generation, generation, "in-flight fetch dropped");
     }
 }
